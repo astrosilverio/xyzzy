@@ -1,0 +1,87 @@
+One of the ideas I've been most stubborn about clinging to is that game devs should be able to implement custom commands. I want my HP-themed game to have `accio`, for example, but I don't want `accio` to exist in a great American road-trip adventure. Some commands should come built-in with the engine. Chances are very high that you'll need `go`, for example, and you shouldn't have to re-implement it for every game. But you should be able to modify the built-in commands. Maybe in your road-trip adventure, `go west` will move you one unit west if you're not in a car, and will move you and your car 10 units west if you are in a car. Customizable commands are just as important to effective text adventures as being able to design your own maps and add your own objects.
+
+So how do we do this?
+
+Well, first we have to decide what we mean by a command. What does a command need to do? In my framework, by the time a command is called, we've already processed the text input, removing unrecognized words. Commands are then called with the other recognized input words as arguments. I expect the command to do something based on my input, if my input is valid, and then return a response. For example, if I type some garbage like `go wand`, I expect the `go` command to do nothing but return something like "I don't know where you want me to go," but if I type `go south` and there is a room to the south, the `go` command should move me south and then return the description of my new location.
+
+To define a command, therefore, we need to define what it should (at least try) to do with your input, and what kind of response it should give. What about deciding if your input is valid? Well, there are two ways to do this: the command can either ask forgiveness or ask permission.
+
+To ask forgiveness, just try to do what the input specifies, and handle the errors if something goes wrong. If you use this approach, then a command is basically a try-except block. Let's write `go` in this style. Assume that `Player` objects have a `location` attribute that points to the room they are currently in. `Room` objects will have a dictionary called `paths` with directions for keys and other rooms for values. Further assume that the direction that you want to go in is the first argument to `go`. To successfully execute `go`, there must be a path leading out of your current location in the appropriate direction; if there is not, `current_location.paths[args[0]]` will raise a `KeyError`. Your command should look something like this:
+
+```
+     def go(*args):
+          try:
+              current_location = player.location
+              new_location = current_location.paths[args[0]]
+              player.location = new_location
+          except KeyError:
+              return "I can't go that direction"
+          else:
+              return player.location.description
+```
+
+That's fine, but what if you want to add some logic that you can only go somewhere if you shoes aren't covered in oobleck? Well, according to our ask-forgiveness philosophy, we can't put that logic in here. You decide to make a method on `Player` objects that will only allow `player.location` to change if the player's shoes are not covered in oobleck. If they are, it raises an `OobleckError`. Now, you need to modify your command:
+
+```
+    def go(*args):
+          try:
+              current_location = player.location
+              new_location = current_location.paths[args[0]]
+              player.change_location(new_location)
+          except KeyError:
+              return "I can't go that direction"
+          except OobleckError:
+              return "Your shoes are covered in oobleck and are affixed firmly to the ground."
+          else:
+              return player.location.description
+```
+Every new condition you add to `go` will result in another type of exception that you have to handle, and (more importantly, because adding `except`s is not that hard) will result in logic being added somewhere else in your codebase. 
+
+Cue scary music. Imagine Peeves, wearing a sweater that says "LOGIC", dropping broken umbrellas in your models. 
+
+Why am I so upset about this? Well, consider my dedication to easily customizable commands. In this model, changing how `go` works will involve modifying bits of code that are not `go`. Adding a new command will involve not just defining a new command, but also finding the relevant places in the codebase to add logic, and making sure that your new logic plays nicely with the logic that is already there. By removing responsibility from commands, we make them less modular.
+
+Let's go back to the oobleck example. I modified my `Player` class, a stateful class, so that it contained game logic. That is what will happen when you allow logic to creep out of your commands: the reunion, or at least un-separation, of logic and state. As well as making the stateful classes unwieldy, the ask-forgiveness solution makes it difficult to impose a boundary between game state and game logic.
+
+Therefore, I opted for an ask-permission approach, and made my commands do syntax validation and game logic checks before executing. This approach allows my stateful classes to remain lightweight, enforces a boundary between logic and state, and keeps my commands modular and customizable. 
+
+My base Command class has three, optionally four responsibilities:
+
+* syntax check -- "do these arguments make sense? I can't exactly `take east`."
+* logic check -- "can I do that? I can't `go west` if there's a brick wall in that direction."
+* (optional) state change -- "ok looks like I can take that book for you, let me modify your inventory accordingly"
+* formulate response -- "I've moved you south, here is the description of the new room you're in"
+To define a command, simply instantiate a Command object with helper functions that take care of those responsibilities. The Command, when called, will call the syntax check functions, then call the game logic functions, then, if nothing has thrown an error, will call the state change functions and the the response function. For example, `go` now looks something like this:
+
+```
+     def is_a_direction(map, word):
+        if word not in map.directions:
+            raise CommandError("Where do you want me to go?")
+
+     def path_exists(map, player, direction):
+        if direction not in player.location.paths:
+            raise CommandError("You can't go that way.")
+
+     def move_player(map, player, direction):
+        new_location = player.location.paths[direction]
+        player.location = new_location
+
+     def location_description(map, player):
+          return str(player.location)
+
+     go = Command(
+        name='go',
+        syntax=[is_a_direction],
+        rules=[path_exists],
+        state_changes=[move_player],
+        response=location_description)
+```
+
+Granted, it's a bit wordy. But now, if I want to include the oobleck rule, all I need to do is write a function `check_for_oobleck` and add it to the rules for `go`, no sticking logic in stateful classes necessary.
+
+Coming soon: more examples of commands. Until then, happy adventuring!
+
+
+
+
+
