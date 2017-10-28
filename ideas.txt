@@ -1,0 +1,4 @@
+transcript of decorators talk
+some gotchas of text game design
+deep dive: how does `patch` work
+deep dive: how does @property work
