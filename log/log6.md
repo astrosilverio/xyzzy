@@ -6,6 +6,9 @@ inventory -- nothing
 examine -- object description
 go -- room description
 take / drop -- nothing
+go -- room description
+take / drop -- nothing
+examine -- object description
 
 commands can call commands? difference between a command and a return value?
 
